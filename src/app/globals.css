@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Industrial palette: steel blue primary, neutral slate surfaces, signal colours for status */
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 215 28% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 28% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 28% 14%;
+    --primary: 207 79% 28%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 215 28% 20%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 215 14% 42%;
+    --accent: 207 60% 94%;
+    --accent-foreground: 207 79% 24%;
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 60% 34%;
+    --warning: 35 92% 45%;
+    --border: 214 20% 88%;
+    --input: 214 20% 84%;
+    --ring: 207 79% 36%;
+    --sidebar: 213 45% 13%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 216 30% 8%;
+    --foreground: 210 20% 92%;
+    --card: 216 28% 11%;
+    --card-foreground: 210 20% 92%;
+    --popover: 216 28% 11%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 205 85% 60%;
+    --primary-foreground: 216 40% 8%;
+    --secondary: 216 22% 17%;
+    --secondary-foreground: 210 20% 90%;
+    --muted: 216 22% 15%;
+    --muted-foreground: 215 14% 64%;
+    --accent: 207 40% 20%;
+    --accent-foreground: 205 85% 80%;
+    --destructive: 0 70% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 55% 48%;
+    --warning: 38 92% 56%;
+    --border: 216 20% 20%;
+    --input: 216 20% 24%;
+    --ring: 205 85% 60%;
+    --sidebar: 216 35% 6%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "tnum" 1, "cv11" 1;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+}

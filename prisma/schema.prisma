@@ -1,0 +1,443 @@
+// SupplySync - Prisma schema (PostgreSQL / Supabase)
+// Table names are snake_case via @@map; columns stay camelCase in TypeScript and snake_case in SQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum RoleKey {
+  ADMIN
+  BUYER
+  SUPPLIER
+  LOGISTICS
+  MANAGEMENT
+}
+
+enum PoHeaderStatus {
+  DRAFT
+  SENT
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum ReceiptStatus {
+  NOT_SENT
+  PENDING
+  ACKNOWLEDGED
+}
+
+enum ConfirmationStatus {
+  PENDING
+  CONFIRMED
+  REVISED
+  REJECTED
+}
+
+enum LineStatus {
+  OPEN
+  PARTIALLY_DELIVERED
+  DELIVERED
+  GR_PENDING
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  OVERDUE
+  DISCREPANCY
+  CLOSED
+}
+
+enum FollowupStatus {
+  OPEN
+  DONE
+  SUPERSEDED
+  CANCELLED
+}
+
+enum FollowupSource {
+  AUTO
+  MANUAL
+}
+
+enum CommChannel {
+  COMMENT
+  EMAIL
+  SYSTEM
+}
+
+enum EmailStatus {
+  DRAFT
+  SENT
+  FAILED
+}
+
+enum AttachmentKind {
+  DELIVERY_NOTE
+  ASN
+  INVOICE
+  GR_DOCUMENT
+  PO_DOCUMENT
+  OTHER
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  ARCHIVE
+  RESTORE
+  OVERRIDE
+  STATUS_CHANGE
+  IMPORT
+  LOGIN
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model Role {
+  id          String   @id @default(cuid())
+  key         RoleKey  @unique
+  name        String
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("roles")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String?   @map("password_hash")
+  roleId       String    @map("role_id")
+  role         Role      @relation(fields: [roleId], references: [id])
+  supplierId   String?   @map("supplier_id")
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  canOverride  Boolean   @default(false) @map("can_override")
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  purchaseOrders    PurchaseOrder[]    @relation("PoBuyer")
+  followupsAssigned Followup[]         @relation("FollowupAssignee")
+  followupsDone     Followup[]         @relation("FollowupCompletedBy")
+  communications    Communication[]
+  supplierResponses SupplierResponse[]
+  deliveries        DeliveryRecord[]
+  goodsReceipts     GoodsReceipt[]
+  attachments       Attachment[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+
+  @@index([roleId])
+  @@index([supplierId])
+  @@map("users")
+}
+
+// ───────────────────────────── Master data ─────────────────────────────
+
+model Supplier {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  name          String
+  email         String
+  contactPerson String?  @map("contact_person")
+  phone         String?
+  country       String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  users          User[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+// ───────────────────────────── Purchase orders ─────────────────────────────
+
+model PurchaseOrder {
+  id                    String         @id @default(cuid())
+  poNumber              String         @unique @map("po_number")
+  supplierId            String         @map("supplier_id")
+  supplier              Supplier       @relation(fields: [supplierId], references: [id])
+  buyerId               String         @map("buyer_id")
+  buyer                 User           @relation("PoBuyer", fields: [buyerId], references: [id])
+  currency              String         @default("INR")
+  poCreationDate        DateTime       @map("po_creation_date") @db.Date
+  poSentDate            DateTime?      @map("po_sent_date") @db.Date
+  supplierReceiptStatus ReceiptStatus  @default(NOT_SENT) @map("supplier_receipt_status")
+  supplierReceiptDate   DateTime?      @map("supplier_receipt_date") @db.Date
+  status                PoHeaderStatus @default(DRAFT)
+  remarks               String?
+  archivedAt            DateTime?      @map("archived_at")
+  archivedBy            String?        @map("archived_by")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  lines          PurchaseOrderLine[]
+  communications Communication[]
+  attachments    Attachment[]
+
+  @@index([supplierId])
+  @@index([buyerId])
+  @@index([status, archivedAt])
+  @@index([poCreationDate])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id                  String             @id @default(cuid())
+  purchaseOrderId     String             @map("purchase_order_id")
+  purchaseOrder       PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id])
+  lineNumber          Int                @map("line_number")
+  materialNumber      String             @map("material_number")
+  materialDescription String             @map("material_description")
+  plant               String
+  storageLocation     String?            @map("storage_location")
+  uom                 String             @default("EA")
+  unitPrice           Decimal            @default(0) @map("unit_price") @db.Decimal(18, 4)
+
+  orderedQty    Decimal @map("ordered_qty") @db.Decimal(18, 3)
+  dispatchedQty Decimal @default(0) @map("dispatched_qty") @db.Decimal(18, 3)
+  deliveredQty  Decimal @default(0) @map("delivered_qty") @db.Decimal(18, 3)
+  receivedQty   Decimal @default(0) @map("received_qty") @db.Decimal(18, 3)
+  outstandingQty Decimal @map("outstanding_qty") @db.Decimal(18, 3)
+
+  confirmationStatus    ConfirmationStatus @default(PENDING) @map("confirmation_status")
+  originalRequestedDate DateTime           @map("original_requested_date") @db.Date
+  supplierConfirmedDate DateTime?          @map("supplier_confirmed_date") @db.Date
+  latestRevisedDate     DateTime?          @map("latest_revised_date") @db.Date
+  commitmentDate        DateTime?          @map("commitment_date") @db.Date
+  followupDate          DateTime?          @map("followup_date") @db.Date
+  lastFollowupDate      DateTime?          @map("last_followup_date") @db.Date
+  nextFollowupDate      DateTime?          @map("next_followup_date") @db.Date
+  actualDeliveryDate    DateTime?          @map("actual_delivery_date") @db.Date
+  lastGrNumber          String?            @map("last_gr_number")
+  lastGrDate            DateTime?          @map("last_gr_date") @db.Date
+
+  status            LineStatus @default(OPEN)
+  statusOverride    LineStatus? @map("status_override")
+  discrepancyFlag   Boolean    @default(false) @map("discrepancy_flag")
+  remarks           String?
+  supplierRemarks   String?    @map("supplier_remarks")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  followups         Followup[]
+  supplierResponses SupplierResponse[]
+  deliveries        DeliveryRecord[]
+  goodsReceipts     GoodsReceipt[]
+  communications    Communication[]
+  attachments       Attachment[]
+
+  @@unique([purchaseOrderId, lineNumber])
+  @@index([status])
+  @@index([supplierConfirmedDate])
+  @@index([latestRevisedDate])
+  @@index([materialNumber])
+  @@index([plant])
+  @@map("purchase_order_lines")
+}
+
+// ───────────────────────────── Follow-up engine ─────────────────────────────
+
+model Followup {
+  id             String         @id @default(cuid())
+  lineId         String         @map("line_id")
+  line           PurchaseOrderLine @relation(fields: [lineId], references: [id])
+  // The supplier date this follow-up was calculated from (confirmed or revised date)
+  targetDate     DateTime       @map("target_date") @db.Date
+  dueDate        DateTime       @map("due_date") @db.Date
+  source         FollowupSource @default(AUTO)
+  status         FollowupStatus @default(OPEN)
+  assignedToId   String?        @map("assigned_to_id")
+  assignedTo     User?          @relation("FollowupAssignee", fields: [assignedToId], references: [id])
+  notifiedAt     DateTime?      @map("notified_at")
+  completedAt    DateTime?      @map("completed_at")
+  completedById  String?        @map("completed_by_id")
+  completedBy    User?          @relation("FollowupCompletedBy", fields: [completedById], references: [id])
+  outcome        String?
+  supersededById String?        @map("superseded_by_id")
+  // AUTO follow-ups: "<lineId>:<targetDate>" guarantees one reminder per supplier date
+  generationKey  String?        @unique @map("generation_key")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([status, dueDate])
+  @@index([lineId])
+  @@index([assignedToId, status])
+  @@map("followups")
+}
+
+// ───────────────────────────── Collaboration ─────────────────────────────
+
+model Communication {
+  id              String         @id @default(cuid())
+  purchaseOrderId String         @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id])
+  lineId          String?        @map("line_id")
+  line            PurchaseOrderLine? @relation(fields: [lineId], references: [id])
+  userId          String?        @map("user_id")
+  user            User?          @relation(fields: [userId], references: [id])
+  channel         CommChannel    @default(COMMENT)
+  internal        Boolean        @default(false) // true = hidden from supplier
+  message         String
+  emailTo         String?        @map("email_to")
+  emailCc         String?        @map("email_cc")
+  emailSubject    String?        @map("email_subject")
+  emailStatus     EmailStatus?   @map("email_status")
+  emailError      String?        @map("email_error")
+  emailMessageId  String?        @map("email_message_id")
+  sentAt          DateTime?      @map("sent_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  attachments Attachment[]
+
+  @@index([purchaseOrderId, createdAt])
+  @@index([channel, emailStatus])
+  @@map("communications")
+}
+
+model SupplierResponse {
+  id                String    @id @default(cuid())
+  lineId            String    @map("line_id")
+  line              PurchaseOrderLine @relation(fields: [lineId], references: [id])
+  responseReceived  Boolean   @default(true) @map("response_received")
+  responseDate      DateTime  @map("response_date") @db.Date
+  deliveryConfirmed Boolean   @default(false) @map("delivery_confirmed")
+  confirmedDate     DateTime? @map("confirmed_date") @db.Date
+  revisedDate       DateTime? @map("revised_date") @db.Date
+  previousDate      DateTime? @map("previous_date") @db.Date
+  delayReason       String?   @map("delay_reason")
+  supplierComments  String?   @map("supplier_comments")
+  nextAction        String?   @map("next_action")
+  recordedById      String?   @map("recorded_by_id")
+  recordedBy        User?     @relation(fields: [recordedById], references: [id])
+  viaPortal         Boolean   @default(false) @map("via_portal")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([lineId, createdAt])
+  @@map("supplier_responses")
+}
+
+// ───────────────────────────── Delivery & GR ─────────────────────────────
+
+model DeliveryRecord {
+  id           String    @id @default(cuid())
+  lineId       String    @map("line_id")
+  line         PurchaseOrderLine @relation(fields: [lineId], references: [id])
+  deliveryNote String    @map("delivery_note")
+  asnNumber    String?   @map("asn_number")
+  deliveryDate DateTime  @map("delivery_date") @db.Date
+  quantity     Decimal   @db.Decimal(18, 3)
+  remarks      String?
+  createdById  String?   @map("created_by_id")
+  createdBy    User?     @relation(fields: [createdById], references: [id])
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  goodsReceipts GoodsReceipt[]
+
+  @@index([lineId])
+  @@index([deliveryDate])
+  @@map("delivery_records")
+}
+
+model GoodsReceipt {
+  id               String    @id @default(cuid())
+  lineId           String    @map("line_id")
+  line             PurchaseOrderLine @relation(fields: [lineId], references: [id])
+  deliveryRecordId String?   @map("delivery_record_id")
+  deliveryRecord   DeliveryRecord? @relation(fields: [deliveryRecordId], references: [id])
+  grNumber         String    @map("gr_number")
+  grDate           DateTime  @map("gr_date") @db.Date
+  quantity         Decimal   @db.Decimal(18, 3)
+  reversed         Boolean   @default(false)
+  remarks          String?
+  createdById      String?   @map("created_by_id")
+  createdBy        User?     @relation(fields: [createdById], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@unique([grNumber, lineId])
+  @@index([lineId])
+  @@index([grDate])
+  @@map("goods_receipts")
+}
+
+// ───────────────────────────── Files ─────────────────────────────
+
+model Attachment {
+  id              String         @id @default(cuid())
+  purchaseOrderId String?        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  lineId          String?        @map("line_id")
+  line            PurchaseOrderLine? @relation(fields: [lineId], references: [id])
+  communicationId String?        @map("communication_id")
+  communication   Communication? @relation(fields: [communicationId], references: [id])
+  kind            AttachmentKind @default(OTHER)
+  fileName        String         @map("file_name")
+  mimeType        String         @map("mime_type")
+  sizeBytes       Int            @map("size_bytes")
+  storagePath     String?        @map("storage_path") // Supabase Storage key
+  data            Bytes?         // fallback storage when no bucket is configured
+  uploadedById    String?        @map("uploaded_by_id")
+  uploadedBy      User?          @relation(fields: [uploadedById], references: [id])
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@index([purchaseOrderId])
+  @@index([lineId])
+  @@map("attachments")
+}
+
+// ───────────────────────────── Governance ─────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  entityType String      @map("entity_type")
+  entityId   String      @map("entity_id")
+  poNumber   String?     @map("po_number")
+  action     AuditAction
+  field      String?
+  beforeValue String?    @map("before_value")
+  afterValue  String?    @map("after_value")
+  reason     String?
+  userId     String?     @map("user_id")
+  user       User?       @relation(fields: [userId], references: [id])
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([poNumber])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, read, createdAt])
+  @@map("notifications")
+}
+
+model Setting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
