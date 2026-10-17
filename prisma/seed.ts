@@ -44,7 +44,15 @@ async function reset() {
 }
 
 async function main() {
-  if (process.env.NODE_ENV === "production" && process.env.SEED_FORCE !== "1") {
+  // --if-empty: used by the Vercel build. Only seeds a brand-new database; never touches existing data.
+  if (process.argv.includes("--if-empty")) {
+    const existing = await prisma.user.count();
+    if (existing > 0) {
+      console.log(`Demo seed skipped: database already has ${existing} user(s).`);
+      return;
+    }
+    console.log("Empty database detected - loading demo data…");
+  } else if (process.env.NODE_ENV === "production" && process.env.SEED_FORCE !== "1") {
     throw new Error("Refusing to reset a production database. Set SEED_FORCE=1 if you really mean it.");
   }
   console.log("Resetting demo data…");
