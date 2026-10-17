@@ -5,7 +5,7 @@
   "description": "SupplySync - Supplier Collaboration & Purchase Order Visibility Platform",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && npm run db:sync && next build",
     "start": "next start",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
@@ -14,7 +14,8 @@
     "db:push": "prisma db push",
     "db:views": "prisma db execute --file prisma/sql/reporting_views.sql --schema prisma/schema.prisma",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:sync": "if [ -n \"$DIRECT_URL\" ]; then prisma db push --skip-generate; else echo \"DIRECT_URL not set - skipping database sync\"; fi"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

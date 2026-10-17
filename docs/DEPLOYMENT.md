@@ -62,6 +62,8 @@ npm run db:seed                        # demo users + POs
 npm run dev                            # open http://localhost:3000 and sign in as buyer@supplysync.demo / Demo@1234
 ```
 
+> On Vercel the build also runs `npm run db:sync` (`prisma db push`) whenever `DIRECT_URL` is set, so tables are created/updated automatically on deploy. It refuses destructive changes, so data is never dropped silently.
+
 Commit the generated migration and lockfile so Vercel and your team use the same schema:
 
 ```bash
